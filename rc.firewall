@@ -1,0 +1,176 @@
+#---------------------
+#Definindo Variaveis
+
+#Internet
+internet="0.0.0.0/0"
+
+#Redes
+redelocalalap="10.12.10.0/24"
+redelocalanex="192.168.20.0/24"
+
+#Interfaces de Rede
+ethlocalalap="eth2"
+ethlocalanex="eth1"
+ethinternet="eth0"
+
+#ipadministradores
+ipadm="10.12.10.12"
+
+#ippublico
+ippublico="200.222.222.100"
+
+#----------------------------------------
+
+echo "Habilitando passagem de pacotes!"
+echo 1 > /proc/sys/net/ipv4/ip_forward
+
+echo "Carregando os módulos necessários"
+modprobe ip_tables
+modprobe ip_conntrack
+modprobe ip_conntrack_ftp
+modprobe iptable_nat
+modprobe ip_nat_ftp
+modprobe ipt_MASQUERADE
+
+echo "Limpando as regras"
+iptables -F
+iptables -X
+iptables -t nat -F
+iptables -t nat -X
+
+echo "Definindo políticas padrão"
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
+
+#----------------------------------
+# Implementação das reas de Input
+echo "Regras de INPUT"
+
+echo "Definindo regras para lo"
+iptables -A INPUT -i lo -j ACCEPT
+
+echo "Definindo regras de retorno de INPUT"
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+echo "Regras de INPUT do Adm"
+iptables -A INPUT -i $ethlocalalap -s $ipadm -j ACCEPT
+
+echo "Liberando acesso ao servidor WEB - porta 80"
+#iptables -A INPUT -i $ethinternet -s $internet -p tcp --dport 80 -j ACCEPT
+#iptables -A INPUT -i $ethlocalalap -s $redelocalalap -p tcp --dport 80 -j ACCEPT
+#iptables -A INPUT -i $ethlocalanex -s $redelocalanex -p tcp --dport 80 -j ACCEPT
+
+echo "Liberando acesso ao servidor WEB - porta 443"
+#iptables -A INPUT -i $ethinternet -s $internet -p tcp --dport 443 -j ACCEPT
+#iptables -A INPUT -i $ethlocalalap -s $redelocalalap -p tcp --dport 443 -j ACCEPT
+#iptables -A INPUT -i $ethlocalanex -s $redelocalanex -p tcp --dport 443 -j ACCEPT
+
+echo "Liberando acesso ao servidor ftp - porta 21"
+#iptables -A INPUT -i $ethinternet -s $internet -p tcp --dport 21 -j ACCEPT
+#iptables -A INPUT -i $ethlocalalap -s $redelocalalap -p tcp --dport 21 -j ACCEPT
+#iptables -A INPUT -i $ethlocalanex -s $redelocalanex -p tcp --dport 21 -j ACCEPT
+
+echo "Liberando ping|"
+iptables -A INPUT -p ICMP -i $ethlocalalap -s $redelocalalap -j ACCEPT
+iptables -A INPUT -p ICMP -i $ethlocalanex -s $redelocalanex -j ACCEPT
+
+#-----------------------------------
+# Implementação das regras FORWARD
+echo "Regras de FORWARD"
+
+# Primeiro, ativar o mascaramento (nat).
+echo "Ativando mascaramento"
+#iptables -t nat -A POSTROUTING -o $ethinternet -j MASQUERADE
+iptables -t nat -A POSTROUTING -s $ipadm -j SNAT --to 200.222.222.100
+iptables -t nat -A POSTROUTING -s $redelocalalap -o $ethinternet -j SNAT --to 200.222.222.100
+iptables -t nat -A POSTROUTING -s $redelocalanex -o $ethinternet -j SNAT --to 200.222.222.100
+
+# Redirecionamento do Proxy para a porta 80
+iptables -t nat -A PREROUTING -s $redelocalalap -d $internet -p tcp --dport 80 -j REDIRECT --to 3128
+iptables -t nat -A PREROUTING -s $redelocalanex -d $internet -p tcp --dport 80 -j REDIRECT --to 3128
+
+echo "Definindo regras de retorno de FORWARD"
+iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+echo "Regras do administrador"
+iptables -A FORWARD -i $ethlocalalap -s $ipadm -j ACCEPT
+
+echo "Liberando FORWARD para porta 3128 - proxy"
+iptables -A FORWARD -i $ethlocalalap -s $redelocalalap -d $internet -p tcp --dport 3128 -j ACCEPT
+iptables -A FORWARD -i $ethlocalanex -s $redelocalanex -d $internet -p tcp --dport 3128 -j ACCEPT
+
+echo "Liberando forward para porta 80 - web"
+iptables -A FORWARD -i $ethlocalalap -s $redelocalalap -d $internet -p tcp --dport 80 -j ACCEPT
+iptables -A FORWARD -i $ethlocalanex -s $redelocalanex -d $internet -p tcp --dport 80 -j ACCEPT
+
+echo "Liberando FORWARD para porta 443 - web"
+iptables -A FORWARD -i $ethlocalalap -s $redelocalalap -d $internet -p tcp --dport 443 -j ACCEPT
+iptables -A FORWARD -i $ethlocalanex -s $redelocalanex -d $internet -p tcp --dport 443 -j ACCEPT
+
+#echo "Liberando FORWARD para porta 50 - ssh"
+iptables -A FORWARD -i $ethlocalalap -s $redelocalalap -d $internet -p tcp --dport 50 -j ACCEPT
+iptables -A FORWARD -i $ethlocalanex -s $redelocalanex -d $internet -p tcp --dport 50 -j ACCEPT
+
+echo "Liberando FORWARD para porta 110 - pop3"
+iptables -A FORWARD -i $ethlocalalap -s $redelocalalap -d $internet -p tcp --dport 110 -j ACCEPT
+iptables -A FORWARD -i $ethlocalanex -s $redelocalanex -d $internet -p tcp --dport 110 -j ACCEPT
+
+echo "Liberando FORWARD para porta 25 - smtp"
+iptables -A FORWARD -i $ethlocalalap -s $redelocalalap -d $internet -p tcp --dport 25 -j ACCEPT
+iptables -A FORWARD -i $ethlocalanex -s $redelocalanex -d $internet -p tcp --dport 25 -j ACCEPT
+
+echo "Liberando FORWARD para porta 53 - dns"
+iptables -A FORWARD -i $ethlocalalap -s $redelocalalap -d $internet -p tcp --dport 53 -j ACCEPT
+iptables -A FORWARD -i $ethlocalanex -s $redelocalanex -d $internet -p tcp --dport 53 -j ACCEPT
+
+echo "Liberando FORWARD para porta 23 - telnet"
+#iptables -A FORWARD -i $ethlocalalap -s $redelocalalap -d $internet -p tcp --dport 23 -j ACCEPT
+#iptables -A FORWARD -i $ethlocalanex -s $redelocalanex -d $internet -p tcp --dport 23 -j ACCEPT
+
+echo "Liberando FORWARD para porta 21 - ftp"
+iptables -A FORWARD -i $ethlocalalap -s $redelocalalap -d $internet -p tcp --dport 21 -j ACCEPT
+iptables -A FORWARD -i $ethlocalanex -s $redelocalanex -d $internet -p tcp --dport 21 -j ACCEPT
+
+echo "Liberando FORWARD para porta 1863 - MSN"
+iptables -A FORWARD -i $ethlocalalap -s $redelocalalap -d $internet -p tcp --dport 1863 -j ACCEPT
+iptables -A FORWARD -i $ethlocalanex -s $redelocalanex -d $internet -p tcp --dport 1863 -j ACCEPT
+
+echo "Liberando FORWARD para porta 6667 - irc"
+#iptables -A FORWARD -i $ethlocalalap -s $redelocalalap -d $internet -p tcp --dport 6667 -j ACCEPT
+#iptables -A FORWARD -i $ethlocalanex -s $redelocalanex -d $internet -p tcp --dport 6667 -j ACCEPT
+
+echo "Liberando FORWARD para porta Receita Federal"
+iptables -A FORWARD -i $ethlocalalap -s $redelocalalap -d $internet -p tcp --dport 3456 -j ACCEPT
+iptables -A FORWARD -i $ethlocalanex -s $redelocalanex -d $internet -p tcp --dport 3456 -j ACCEPT
+
+echo "Liberando ping"
+iptables -A FORWARD -p ICMP -i $ethlocalalap -s $redelocalalap -j ACCEPT
+iptables -A FORWARD -p ICMP -i $ethlocalanex -s $redelocalanex -j ACCEPT
+
+#-----------------------------------
+# Implementação das regras  Forward
+echo "Regras contra ataques externos"
+
+# Configurando a proteção anti-spoofing
+for spoofing in /proc/sys/net/ipv4/conf/*/rp_filter; do
+        echo "1" > $spoofing
+done
+echo "Setting anti-spoofing protection ...[ OK ]"
+
+# Impedimos que um atacante possa maliciosamente alterar alguma rota
+echo 0 > /proc/sys/net/ipv4/conf/all/accept_redirects
+echo "Setting anti-redirects .............[ OK ]"
+
+# Utilizado em diversos ataques, isso possibilita que o atacante determine o "caminho" que seu
+# pacote vai percorrer (roteadores) ate seu destino. Junto com spoof, isso se torna muito perigoso.
+echo 0 > /proc/sys/net/ipv4/conf/all/accept_source_route
+echo "Setting anti-source_route ..........[ OK ]"
+
+# Protecao contra responses bogus
+echo 1 > /proc/sys/net/ipv4/icmp_ignore_bogus_error_responses
+echo "Setting anti-bugus_response ........[ OK ]"
+
+# Protecao contra ataques de syn flood (inicio da conexao TCP). Tenta conter ataques de DoS.
+echo 1 > /proc/sys/net/ipv4/tcp_syncookies
+echo "Setting anti-synflood protection ...[ OK ]"
